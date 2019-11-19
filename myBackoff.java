@@ -29,9 +29,9 @@ public class myBackoff {
 			 	File binaryLatencyFile = new File("binaryLatency.txt");
 			 	File logLatencyFile = new File("logLatency.txt");
 				try {
-					linearLatencyWriter = new BufferedWriter(new FileWriter("linearLatency.txt", false));
-					binaryLatencyWriter = new BufferedWriter(new FileWriter("binaryLatency.txt", false));
-					logLatencyWriter = new BufferedWriter(new FileWriter("logLatency.tx", false));
+					linearLatencyWriter = new BufferedWriter(new FileWriter("linearLatency.txt", true));
+					binaryLatencyWriter = new BufferedWriter(new FileWriter("binaryLatency.txt", true));
+					logLatencyWriter = new BufferedWriter(new FileWriter("logLatency.txt", true));
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
@@ -67,7 +67,11 @@ public class myBackoff {
 				}
 			}
 		 
-		 
+		 //log base 2 function found here https://www.techiedelight.com/calculate-log-base-2-in-java/
+		 public static int log(int x)
+		 {
+		     return (int) (Math.log(x) / Math.log(2) + 1e-10);
+		 }
 		//------------------- End Private Function Definitions -------------------//
 		 
 		
@@ -82,7 +86,7 @@ public class myBackoff {
 		public int linearSimulation(int N) {
 			Random rand = new Random();
 			int windowSize = 2;
-			int[] countOfSlotsHit = new int[256];
+			int[] countOfSlotsHit = new int[1048];
 			int latency = 0;
 			int lastSlotUsed = 0;
 			 
@@ -99,23 +103,115 @@ public class myBackoff {
 					 }
 					 countOfSlotsHit[i] = 0;
 				 }
-				 latency += windowSize;
+				 if(N > 0) {
+					 latency += windowSize;
+				 } else {
+					 latency += lastSlotUsed;
+				 }
 				 //System.out.println("\nN = " + N + "\nlatency = " + latency + "\n");
 				 windowSize += 1; //only line that should change between each sim
 			 }
 			 
-			 latency = latency - (windowSize - 1) + lastSlotUsed; //make sure to add only the slots used, not all available slots in the final window
 			 return latency;
 		 }
+		
+		//--- binarySimulation determine a simulated latency given N number of devices. Returns latency calculation
+		public int binarySimulation(int N) {
+			Random rand = new Random();
+			int windowSize = 2;
+			int[] countOfSlotsHit = new int[65536];
+			int latency = 0;
+			int lastSlotUsed = 0;
+			 
+			while(N > 0) {
+				 for(int i = 0; i < N; i++) {
+				 int randomSlot = rand.nextInt(windowSize);
+				 countOfSlotsHit[randomSlot] += 1;
+				 }
+				 for(int i = 0; i < windowSize; i++) {
+					 //System.out.println("countOfSlotsHit[" + i + "] = " + countOfSlotsHit[i]);
+					 if(countOfSlotsHit[i] == 1) {
+						 N -= 1;
+						 lastSlotUsed = i + 1; //slots are counted from 1, so add 1 here
+					 }
+					 countOfSlotsHit[i] = 0;
+				 }
+				 if(N > 0) {
+					 latency += windowSize;
+				 } else {
+					 latency += lastSlotUsed;
+				 }
+				 windowSize = windowSize*2; //only line that should change between each sim
+			 }
+			 
+			 return latency;
+		 }
+				
+		//--- logSimulation determine a simulated latency given N number of devices. Returns latency calculation
+		public int logSimulation(int N) {
+			Random rand = new Random();
+			int windowSize = 2;
+			int[] countOfSlotsHit = new int[1048];
+			int latency = 0;
+			int lastSlotUsed = 0;
+			 
+			while(N > 0) {
+				 for(int i = 0; i < N; i++) {
+				 int randomSlot = rand.nextInt(windowSize);
+				 countOfSlotsHit[randomSlot] += 1;
+				 }
+				 for(int i = 0; i < windowSize; i++) {
+					 //System.out.println("countOfSlotsHit[" + i + "] = " + countOfSlotsHit[i]);
+					 if(countOfSlotsHit[i] == 1) {
+						 N -= 1;
+						 lastSlotUsed = i + 1; //slots are counted from 1, so add 1 here
+					 }
+					 countOfSlotsHit[i] = 0;
+				 }
+				 if(N > 0) {
+					 latency += windowSize;
+				 } else {
+					 latency += lastSlotUsed;
+				 }
+				 windowSize = (1 + (1/log(windowSize))*2); //only line that should change between each sim
+			 }
+			 
+			 return latency;
+		 }
+		
+		//--- main - calculates and writes averages to necessary files. No return. 
 		public static void main(String[] args) {
 			int numberOfDevices = 100;
 			double average = 0.0;
 			myBackoff backoff = new myBackoff();
 			
-			for(int i = 0; i < 10; i++) {
-				average += backoff.linearSimulation(numberOfDevices);
+			while(numberOfDevices <= 6000) {
+				//Linear backoff first
+				for(int i = 0; i < 10; i++) {
+					average += backoff.linearSimulation(numberOfDevices);
+				}
+				average = average/10; //take the average latency by dividing by number of simulations
+				backoff.writeToLinearLatency(average);
+				average = 0.0; //reset average
+				
+				//then do binary backoff
+				for(int i = 0; i < 10; i++) {
+					average += backoff.binarySimulation(numberOfDevices);
+				}
+				average = average/10; //take the average latency by dividing by number of simulations
+				backoff.writeToBinaryLatency(average);
+				average = 0.0; //reset average
+				
+				//finally do logarithmic backoff
+				for(int i = 0; i < 10; i++) {
+					average += backoff.binarySimulation(numberOfDevices);
+				}
+				average = average/10; //take the average latency by dividing by number of simulations
+				backoff.writeToLogLatency(average);
+				average = 0.0; //reset average
+				
+				//increase number of devices and start over
+				numberOfDevices += 100; //increase number of devices by 100
 			}
-			backoff.writeToLinearLatency(average/10);
-			
 		}
 }
